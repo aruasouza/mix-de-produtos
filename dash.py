@@ -41,6 +41,7 @@ html = '''
 }
 </style>
 '''
+st.set_page_config(page_title='Mix de Produtos Bistek', page_icon='🧴')
 st.markdown(html,unsafe_allow_html=True)
 
 if 'not_first_load' not in st.session_state:
