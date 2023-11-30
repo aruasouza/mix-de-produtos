@@ -61,7 +61,7 @@ with st.sidebar:
     c1,c2 = st.columns(2)
     c1.button('Inserir/remover',on_click = flag)
     c2.button('Limpar flags',on_click = remove_all)
-    st.button('Salvar mudaças',on_click = save_changes)
+    st.button('Salvar mudanças',on_click = save_changes)
 
 if not st.session_state.toggle:
     ren = {'loja':'Loja','secao':'Seção','produto':'Produto','mod':'Ação'}
