@@ -4,28 +4,39 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 
-mod_color = {'Manter':'yellow','Remover':'red','Incluir':'green','flag':'Flag'}
-ren = {'loja':'Loja','secao':'Seção','produto':'Produto','mod':'Ação','flag':'Flag'}
+mod_color = {'Manter':'yellow','Remover':'red','Incluir':'green'}
+ren = {'loja':'Loja','secao':'Seção','produto':'Produto','mod':'Ação','flag':'Flag','ação original':'Ação Original'}
+col_config_1 = {'Loja':None,'Código Loja':None,'Marca':None,'Flag':None,'Ação Original':None,
+                                     'Faturamento':st.column_config.NumberColumn(format = 'R$ %.2f'),
+                                     'Quantidade':st.column_config.NumberColumn(format = '%d'),
+                                     '% Seção':st.column_config.NumberColumn(format = '%.2f'),
+                                     'Ação':st.column_config.SelectboxColumn(options = ['Manter','Incluir','Remover'])}
+col_config_2 = {'Loja':None,'Código Loja':None,'Marca':None,'Flag':None,
+                                     'Faturamento':st.column_config.NumberColumn(format = 'R$ %.2f'),
+                                     'Quantidade':st.column_config.NumberColumn(format = '%d'),
+                                     '% Seção':st.column_config.NumberColumn(format = '%.2f')}
+col_config_3 = {'Loja':None,'Código Loja':None,'Marca':None,'Flag':None,
+                                     'Faturamento':st.column_config.NumberColumn(format = 'R$ %.2f'),
+                                     'Quantidade':st.column_config.NumberColumn(format = '%d'),
+                                     '% Seção':st.column_config.NumberColumn(format = '%.2f'),
+                                     'Ação':st.column_config.SelectboxColumn(options = ['Manter','Incluir','Remover'])}
+
 unren = {ren[key]:key for key in ren}
 def load_data():
     df = pd.read_csv('v2/viz_novo_metodo.csv',sep = ';').rename(ren,axis = 1)
-    if 'Flag' not in df.columns:
-        df['Flag'] = False
+    df['Código'] = df['Código'].astype(str)
+    df['% Seção'] = df['% Seção'] * 100
+    if 'Ação Original' not in df.columns:
+        df['Ação Original'] = df['Ação']
     return df
 
 def load_clusters():
-    cluster_df = pd.read_csv('v2/cluster.csv').rename({'Venda R$':'Faturamento Limpeza (Normalizado)',
-                                                       'largura_total':'Tamanho Limpeza (Normalizado)'},axis = 1)
-    cluster_df['cluster_name'] = None
-    for cluster in cluster_df['cluster'].unique():
-        f = cluster_df['cluster'] == cluster
-        name = ', '.join([str(x) for x in sorted(cluster_df.loc[f,'LOJA'])])
-        cluster_df.loc[f,'cluster_name'] = name
-    name_to_number = cluster_df[['cluster','cluster_name']].drop_duplicates().set_index('cluster_name')['cluster'].to_dict()
-    return cluster_df,name_to_number
+    cluster_df = pd.read_csv('v2/clusters.csv',index_col=0)
+    cluster_info = pd.read_csv('v2/clusterizacao_info.csv',index_col=0)
+    return cluster_df,cluster_info
 
-def load_repr():
-    return pd.read_csv('v2/representantes.csv',index_col = 1)
+def load_marcas():
+    return pd.read_csv('v2/fat_marcas.csv')
 
 def refilter():
     apply_changes()
@@ -38,9 +49,16 @@ def save_changes():
     st.session_state.data.rename(unren,axis = 1).to_csv('v2/viz_novo_metodo.csv',index = False,sep = ';')
     st.sidebar.success('Alterações salvas')
 
+def reverse(x):
+    if x == 'Remover':
+        return 'Incluir'
+    elif x == 'Incluir':
+        return 'Remover'
+    return x
+
 def apply_changes():
-    changes = st.session_state.changes['Flag']
-    st.session_state.data.loc[changes.index,'Flag'] = changes
+    changes = st.session_state.changes['Ação']
+    st.session_state.data.loc[changes.index,'Ação'] = changes
 
 html = '''
 <style>
@@ -65,13 +83,13 @@ if 'not_first_load' not in st.session_state:
     st.session_state.secoes = list(data['Seção'].unique())
     st.session_state.filtered_data = data.loc[data['Loja'] == st.session_state.lojas[0]]
     st.session_state.prod_map = data[['Produto','Seção']].drop_duplicates().set_index('Produto')['Seção']
-    st.session_state.cluster_df,st.session_state.name_to_number = load_clusters()
-    st.session_state.repr = load_repr()
-
+    st.session_state.cluster_df,st.session_state.cluster_info = load_clusters()
+    st.session_state.marcas_df = load_marcas()
+    st.session_state.marcas = list(data['Marca'].unique())
 
 with st.sidebar:
     st.selectbox('Loja',st.session_state.lojas,key = 'current_loja',on_change = refilter)
-    st.radio('Menu',['Tabela','Gráfico','Flags','Marcas','Clusters'],key = 'menu',on_change = refilter)
+    st.radio('Menu',['Tabela','Gráfico','Mudanças','Marcas','Clusters'],key = 'menu',on_change = refilter)
     st.button('Salvar mudanças',on_click = save_changes)
 
 h = 500
@@ -91,16 +109,19 @@ if st.session_state.menu == 'Tabela':
         filt = filt & ((df['Ação'] == 'Manter') | (df['Ação'] == 'Incluir'))
     elif acao != 'Todas':
         filt = filt & (df['Ação'] == acao)
-    st.session_state.changes = st.data_editor(df.loc[filt],hide_index = True,
-                    use_container_width = True,height = h,disabled = ('Loja','Seção','Produto','Ação','Marca','Grupo',
-                                                                      'Subrupo','Faturamento','% Seção'),
-                    column_config = {'Loja':None,'Código Loja':None})
-elif st.session_state.menu == 'Flags':
+    df = df.loc[filt]
+    st.session_state.changes = st.data_editor(df,hide_index = True,
+                    use_container_width = True,height = h,disabled = ('Loja','Seção','Produto','Ação Original','Marca','Grupo',
+                                                                      'Subgrupo','Faturamento','% Seção','Quantidade',
+                                                                      'Código'),
+                    column_config = col_config_1)
+elif st.session_state.menu == 'Mudanças':
     df = st.session_state.data
-    st.session_state.changes = st.data_editor(df.loc[df['Flag']],hide_index = True,
-                    use_container_width = True,height = h,disabled = ('Loja','Seção','Produto','Ação','Marca','Grupo',
-                                                                      'Subrupo','Faturamento','% Seção'),
-                    column_config = {'Código Loja':None})
+    st.session_state.changes = st.data_editor(df.loc[df['Ação'] != df['Ação Original']],hide_index = True,
+                    use_container_width = True,height = h,disabled = ('Loja','Seção','Produto','Ação Original','Marca','Grupo',
+                                                                      'Subgrupo','Faturamento','% Seção','Quantidade',
+                                                                      'Código'),
+                    column_config = col_config_3)
 elif st.session_state.menu == 'Gráfico':
     df = st.session_state.filtered_data
     loja = st.session_state.current_loja 
@@ -119,29 +140,50 @@ elif st.session_state.menu == 'Gráfico':
     fig.update_layout(margin = dict(t=25, l=10, r=10, b=10),template='simple_white',height = 600)
     st.plotly_chart(fig,use_container_width=True)
 elif st.session_state.menu == 'Marcas':
-    df = st.session_state.data
-    marcas = df[['Marca','Faturamento']].groupby('Marca').sum()
-    prods_por_marca = df[['Marca','Produto']].loc[df['Ação'] != 'Remover'].drop_duplicates('Produto').groupby('Marca').count()
-    marcas = marcas.join(prods_por_marca).rename({'Produto':'Produtos na Rede'},axis = 1)\
-        .sort_values('Produtos na Rede',ascending=False).reset_index().fillna(0)
-    st.dataframe(marcas,use_container_width=True,hide_index = True)
+    col1,col2 = st.columns(2)
+    col1.selectbox('Seção',['Todas'] + st.session_state.secoes,key = 'sec_marca')
+    col2.selectbox('Marca',['Todas'] + st.session_state.marcas,key = 'marca_marca')
+    data = st.session_state.data
+    marcas_df = st.session_state.marcas_df
+    if st.session_state.sec_marca != 'Todas':
+        marcas_df = marcas_df.loc[marcas_df['NOME SEÇÃO'] == st.session_state.sec_marca]
+    if st.session_state.marca_marca != 'Todas':
+        marcas_df = marcas_df.loc[marcas_df['MARCA'] == st.session_state.marca_marca]
+    count = data[['Marca','Produto','Seção']].loc[data['Ação'] != 'Remover']\
+        .drop_duplicates('Produto').groupby(['Marca','Seção']).count()
+    marcas = marcas_df.join(count,on = ['MARCA','NOME SEÇÃO'])
+    marcas['Produto'] = marcas['Produto'].fillna(0)
+    marcas = marcas.rename({'NOME SEÇÃO':'Seção','MARCA':'Marca','Venda R$':'Faturamento','Produto':'Produtos'},axis = 1)\
+        .sort_values('Produtos',ascending = False)
+    st.dataframe(marcas,use_container_width=True,hide_index = True,column_config = {'Faturamento':
+                                                                            st.column_config.NumberColumn(format = 'R$ %.2f')})
 elif st.session_state.menu == 'Clusters':
+    st.selectbox('Seção',st.session_state.secoes,key = 'secao_cluster')
     tab1,tab3 = st.tabs(['Tabela','Clusterização'])
-    tab1.selectbox('Cluster',st.session_state.cluster_df['cluster_name'].unique(),key = 'cluster_1')
+    col1,col2 = tab1.columns(2)
+    col1.selectbox('Cluster Tamanho',st.session_state.cluster_df[st.session_state.secao_cluster].unique(),key = 'cluster_size')
+    red_cluster_df = st.session_state.cluster_df[st.session_state.cluster_df[st.session_state.secao_cluster] ==\
+                                                 st.session_state.cluster_size]
+    col2.selectbox('Cluster Demografia',red_cluster_df['cluster_dem'].unique(),key = 'cluster_dem')
     df = st.session_state.data
-    rep = st.session_state.repr
-    current_cluster = st.session_state.name_to_number[st.session_state.cluster_1]
-    current_rep = rep.loc[current_cluster,'LOJA']
+    representantes = red_cluster_df[red_cluster_df['cluster_dem'] == st.session_state.cluster_dem].index
+    current_rep = representantes[0]
+    df = df.loc[df['Seção'] == st.session_state.secao_cluster]
     df = df.loc[df['Código Loja'] == current_rep]
     df = df.loc[df['Ação'] != 'Remover']
-    tab1.dataframe(df,hide_index = True,column_config = {'Loja':None,'Ação':None,'Código Loja':None,'Flag':None},
+    tab1.caption('Lojas: ' + ', '.join([str(x) for x in representantes]))
+    tab1.dataframe(df,hide_index = True,column_config = col_config_2,
                  use_container_width = True)
 
     cluster_df = st.session_state.cluster_df
-    cluster_df['cluster'] = cluster_df['cluster'].apply(str)
-    fig = px.scatter(cluster_df.rename({'cluster':'Cluster'},axis = 1),
-                     x = 'Faturamento Limpeza (Normalizado)',y = 'Tamanho Limpeza (Normalizado)',
-                     color = 'Cluster',height=550,template='plotly')
+    info = st.session_state.cluster_info
+    info = info[info['NOME SEÇÃO'] == st.session_state.secao_cluster].set_index('LOJA')
+    cluster_df = cluster_df[[st.session_state.secao_cluster,'cluster_dem']].join(info)
+    cluster_df[st.session_state.secao_cluster] = cluster_df[st.session_state.secao_cluster].astype(str)
+    fig = px.scatter(cluster_df.rename({st.session_state.secao_cluster:'Cluster Tamanho','FATURAMENTO':'Faturamento',
+                                        'ESPACO':'Espaço','cluster_dem':'Cluster Demográfico'},axis = 1),
+                     x = 'Faturamento',y = 'Espaço',
+                     color = 'Cluster Tamanho',symbol="Cluster Demográfico", height=550,template='plotly')
     fig.update_traces(marker_size=10)
     fig.update_layout(showlegend=False)
     tab3.plotly_chart(fig,use_container_width=True,theme = None)
