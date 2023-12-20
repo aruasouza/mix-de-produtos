@@ -36,7 +36,9 @@ def load_clusters():
     return cluster_df,cluster_info
 
 def load_marcas():
-    return pd.read_csv('v2/fat_marcas.csv')
+    df = pd.read_csv('v2/fat_marcas.csv')
+    df['% Seção'] = df['% Seção'] * 100
+    return df.drop('fat_sec',axis = 1)
 
 def refilter():
     apply_changes()
@@ -156,7 +158,9 @@ elif st.session_state.menu == 'Marcas':
     marcas = marcas.rename({'NOME SEÇÃO':'Seção','MARCA':'Marca','Venda R$':'Faturamento','Produto':'Produtos'},axis = 1)\
         .sort_values('Produtos',ascending = False)
     st.dataframe(marcas,use_container_width=True,hide_index = True,column_config = {'Faturamento':
-                                                                            st.column_config.NumberColumn(format = 'R$ %.2f')})
+                                                                            st.column_config.NumberColumn(format = 'R$ %.2f'),
+                                                                            '% Seção':
+                                                                            st.column_config.NumberColumn(format = '%.2f')})
 elif st.session_state.menu == 'Clusters':
     st.selectbox('Seção',st.session_state.secoes,key = 'secao_cluster')
     tab1,tab3 = st.tabs(['Tabela','Clusterização'])
