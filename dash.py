@@ -11,7 +11,7 @@ col_config_1 = {'Loja':None,'Código Loja':None,'Marca':None,'Flag':None,'Ação
                                      'Quantidade':st.column_config.NumberColumn(format = '%d'),
                                      '% Seção':st.column_config.NumberColumn(format = '%.2f'),
                                      'Ação':st.column_config.SelectboxColumn(options = ['Manter','Incluir','Remover'])}
-col_config_2 = {'Loja':None,'Código Loja':None,'Marca':None,'Flag':None,
+col_config_2 = {'Loja':None,'Código Loja':None,'Marca':None,'Flag':None,'Ação Original':None,
                                      'Faturamento':st.column_config.NumberColumn(format = 'R$ %.2f'),
                                      'Quantidade':st.column_config.NumberColumn(format = '%d'),
                                      '% Seção':st.column_config.NumberColumn(format = '%.2f')}
@@ -178,12 +178,14 @@ elif st.session_state.menu == 'Clusters':
     cluster_df = st.session_state.cluster_df
     info = st.session_state.cluster_info
     info = info[info['NOME SEÇÃO'] == st.session_state.secao_cluster].set_index('LOJA')
-    cluster_df = cluster_df[[st.session_state.secao_cluster,'cluster_dem']].join(info)
+    cluster_df = cluster_df[[st.session_state.secao_cluster,'cluster_dem']].join(info).reset_index()\
+        .rename({'index':'Loja'},axis = 1)
     cluster_df[st.session_state.secao_cluster] = cluster_df[st.session_state.secao_cluster].astype(str)
     fig = px.scatter(cluster_df.rename({st.session_state.secao_cluster:'Cluster Tamanho','FATURAMENTO':'Faturamento',
                                         'ESPACO':'Espaço','cluster_dem':'Cluster Demográfico'},axis = 1),
                      x = 'Faturamento',y = 'Espaço',
-                     color = 'Cluster Tamanho',symbol="Cluster Demográfico", height=550,template='plotly')
+                     color = 'Cluster Tamanho',symbol="Cluster Demográfico", height=550,template='plotly',
+                     hover_name = 'Loja')
     fig.update_traces(marker_size=10)
     fig.update_layout(showlegend=False)
     tab3.plotly_chart(fig,use_container_width=True,theme = None)
