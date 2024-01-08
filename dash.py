@@ -52,6 +52,16 @@ def apply_changes():
     changes = st.session_state.changes['Ação']
     st.session_state.data.loc[changes.index,'Ação'] = changes
 
+def remover_sku():
+    skus = set(st.session_state.selecao.loc[st.session_state.selecao['Selecionar'],'Código'])
+    filtro = pd.Series([cod in skus for cod in st.session_state.data['Código']],st.session_state.data.index)
+    st.session_state.data.loc[filtro,'Ação'] = 'Remover'
+
+def resetar_sku():
+    skus = set(st.session_state.selecao.loc[st.session_state.selecao['Selecionar'],'Código'])
+    filtro = pd.Series([cod in skus for cod in st.session_state.data['Código']],st.session_state.data.index)
+    st.session_state.data.loc[filtro,'Ação'] = st.session_state.data.loc[filtro,'Ação Original']
+
 html = '''
 <style>
 .appview-container .main .block-container{
@@ -65,7 +75,7 @@ html = '''
 </style>
 '''
 st.set_page_config(page_title='Mix de Produtos Bistek', page_icon='🧴')
-st.markdown(html,unsafe_allow_html=True)
+st.markdown(html,unsafe_allow_html = True)
 
 if 'not_first_load' not in st.session_state:
     data = load_data()
@@ -84,7 +94,54 @@ with st.sidebar:
     st.button('Salvar mudanças',on_click = save_changes)
 
 h = 500
-if st.session_state.menu == 'Lojas':
+if st.session_state.menu == 'Rede':
+    tab3,tab2,tab1 = st.tabs(['Status','Remover marcas',"Remover SKU's"])
+    c1,c2,c3 = tab1.columns(3)
+    df = st.session_state.data
+    c1.selectbox('Seção',st.session_state.secoes,key = 'current_secao_rede')
+    df = df.loc[df['Seção'] == st.session_state.current_secao_rede]
+    grupos = list(df['Grupo'].unique())
+    c2.selectbox('Grupo',['Todos'] + grupos,key = 'current_grupo_rede')
+    if st.session_state.current_grupo_rede != 'Todos':
+        df = df.loc[df['Grupo'] == st.session_state.current_grupo_rede]
+    subgrupos = list(df['Subgrupo'].unique())
+    c3.selectbox('Subgrupo',['Todos'] + subgrupos,key = 'current_subgrupo_rede')
+    if st.session_state.current_subgrupo_rede != 'Todos':
+        df = df.loc[df['Subgrupo'] == st.session_state.current_subgrupo_rede]
+    df['Lojas'] = df['Ação'].apply(lambda x: x != 'Remover')
+    presenca = df[['Código','Lojas']].groupby('Código').sum()
+    df = df.drop('Lojas',axis = 1).drop_duplicates('Código').join(presenca,on = 'Código')
+    df = df.sort_values('Faturamento',ascending = False).sort_values(['Seção','Grupo','Subgrupo'])
+    df['Selecionar'] = False
+    st.session_state.selecao = tab1.data_editor(df,column_config = col_config_2,column_order = ('Seção','Grupo','Subgrupo','Produto','Código','Faturamento',
+                                                                'Quantidade','% Seção','Lojas','Selecionar'),disabled = ('Seção',
+                                                                'Grupo','Subgrupo','Produto','Código','Faturamento',
+                                                                'Quantidade','% Seção','Lojas'),
+                                                                hide_index = True,use_container_width = True)
+    divisor = 80
+    s1,s2 = len('Remover') / divisor,len('Estado original') / divisor
+    col1,col2,col3 = tab1.columns([s1,s2,1 - (s1 + s2)])
+    col1.button('Remover',on_click = remover_sku)
+    col2.button('Estado original',on_click = resetar_sku)
+    
+    df = st.session_state.data
+    df_antes = df.loc[df['Ação'] != 'Incluir'].drop_duplicates('Produto')[['Marca','Faturamento']]
+    df_depois = df.loc[df['Ação'] != 'Remover'].drop_duplicates('Produto')[['Marca','Faturamento']]
+    group_antes = df_antes.groupby('Marca')
+    marcas_df = group_antes.sum().reset_index().rename({'Faturamento':'Faturamento (antes)'},axis = 1)
+    group_depois = df_depois.groupby('Marca')
+    marcas_df = marcas_df.join(group_depois.sum().rename({'Faturamento':'Faturamento (depois)'},axis = 1),on = 'Marca')
+    marcas_df = marcas_df.join(group_antes.count().rename({'Faturamento':'Produtos (antes)'},axis = 1),on = 'Marca')
+    marcas_df = marcas_df.join(group_depois.count().rename({'Faturamento':'Produtos (depois)'},axis = 1),on = 'Marca')
+    marcas_df = marcas_df.sort_values('Faturamento (depois)',ascending = False)
+    marcas_df['Faturamento (depois)'].fillna(0.0,inplace = True)
+    marcas_df['Produtos (depois)'].fillna(0,inplace = True)
+    marcas_df['Selecionar'] = False
+    tab2.data_editor(marcas_df,hide_index=True,disabled = ('Marca','Faturamento (antes)','Faturamento (depois)',
+                                                           'Produtos (antes)','Produtos (depois)'),
+                                                           use_container_width = True)
+
+elif st.session_state.menu == 'Lojas':
     col1,col2 = st.columns(2)
     col1.selectbox('Loja',options = st.session_state.lojas,key = 'loja_lojas',on_change = apply_changes)
     col2.selectbox('Seção',st.session_state.secoes,key = 'current_secao',on_change = apply_changes)
@@ -178,10 +235,11 @@ elif st.session_state.menu == 'Clusters':
     current_rep = representantes[0]
     df = df.loc[df['Seção'] == st.session_state.secao_cluster]
     df = df.loc[df['Código Loja'] == current_rep]
-    df = df.loc[df['Ação'] != 'Remover']
+    df = df.loc[df['Ação'] != 'Remover'].sort_values(['Seção','Grupo','Subgrupo'])
     tab1.caption('Lojas: ' + ', '.join([str(x) for x in representantes]))
     tab1.dataframe(df,hide_index = True,column_config = col_config_2,
-                 use_container_width = True)
+                 use_container_width = True,column_order = ('Seção','Grupo','Subgrupo','Produto','Código','Faturamento',
+                                                                 'Quantidade','% Seção','Ação'))
 
     cluster_df = st.session_state.cluster_df
     info = st.session_state.cluster_info
